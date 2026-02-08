@@ -145,6 +145,7 @@ func (a *SystrayApp) runPreset(presetIndex int, runner *runner_pkg.Runner) {
 		a.presets[presetIndex].Preset.KanataConfig,
 		a.presets[presetIndex].Preset.TcpPort,
 		a.presets[presetIndex].Preset.Hooks,
+		a.presets[presetIndex].Preset.TrackpadWhileTyping,
 		a.presets[presetIndex].Preset.ExtraArgs,
 		a.presetLogFiles[presetIndex],
 	)

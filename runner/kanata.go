@@ -37,7 +37,8 @@ func NewKanata() *Kanata {
 }
 
 func (r *Kanata) RunNonblocking(ctx context.Context, kanataExecutable string, kanataConfig string,
-	tcpPort int, hooks config.Hooks, extraArgs []string, logFile *os.File,
+	tcpPort int, hooks config.Hooks, trackpadWhileTyping config.TrackpadWhileTyping,
+	extraArgs []string, logFile *os.File,
 ) error {
 	if kanataExecutable == "" {
 		var err error
@@ -92,6 +93,8 @@ func (r *Kanata) RunNonblocking(ctx context.Context, kanataExecutable string, ka
 		}
 
 		log.Infof("Started kanata (pid=%d)", r.cmd.Process.Pid)
+
+		startTrackpadWhileTyping(selfCtx, trackpadWhileTyping)
 
 		// Short poll for kanata tcp server to be up.
 		// Default wait time in kanata is 2000ms, but can be disabled with --nodelay, so hardcoding delay here is not good.

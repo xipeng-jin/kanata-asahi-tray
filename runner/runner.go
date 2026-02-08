@@ -54,7 +54,8 @@ func NewRunner() *Runner {
 // presetName will block until the previous process finishes.
 // To stop running preset, caller needs to cancel ctx.
 func (r *Runner) Run(ctx context.Context, presetName string, kanataExecutable string,
-	kanataConfig string, tcpPort int, hooks config.Hooks, extraArgs []string, kanataLogFile *os.File,
+	kanataConfig string, tcpPort int, hooks config.Hooks, trackpadWhileTyping config.TrackpadWhileTyping,
+	extraArgs []string, kanataLogFile *os.File,
 ) error {
 	r.instancesMappingLock.Lock()
 	defer r.instancesMappingLock.Unlock()
@@ -96,7 +97,16 @@ func (r *Runner) Run(ctx context.Context, presetName string, kanataExecutable st
 	}
 
 	instance := r.kanataInstancePool[instanceIndex]
-	err := instance.RunNonblocking(ctx, kanataExecutable, kanataConfig, tcpPort, hooks, extraArgs, kanataLogFile)
+	err := instance.RunNonblocking(
+		ctx,
+		kanataExecutable,
+		kanataConfig,
+		tcpPort,
+		hooks,
+		trackpadWhileTyping,
+		extraArgs,
+		kanataLogFile,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to run kanata: %v", err)
 	}

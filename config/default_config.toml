@@ -10,6 +10,14 @@ control_server_port = 8100
 tcp_port = 5829
 autorestart_on_crash = false
 
+[defaults.trackpad_while_typing]
+# Enable built-in Linux/Hyprland touchpad toggling while a key is held.
+# When enabled, touchpad is disabled by default and enabled only while trigger_key is held.
+# enabled = false
+# keyboard_device = "auto:kanata"   # or /dev/input/eventX
+# pointer_device = "auto:touchpad"  # or exact Hyprland pointer name
+# trigger_key = "KEY_FN"            # KEY_FN, KEY_LEFTALT, KEY_RIGHTALT
+
 [defaults.hooks]
 # Hooks allow running custom commands on specific events (e.g. when starting preset).
 # Documentation: https://github.com/rszyma/kanata-tray/blob/main/doc/hooks.md
