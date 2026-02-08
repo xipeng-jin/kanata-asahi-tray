@@ -14,6 +14,7 @@ See [#24](https://github.com/rszyma/kanata-tray/issues/24) for comparison
 - Allow to set custom tray icons for active kanata layers.
 - Blink icon on successful kanata config reload.
 - Hooks (custom scripts/programs that will run before/after kanata start/stop)
+- Built-in Linux/Hyprland trackpad-while-typing (no external scripts/hooks required).
 - Support for running multiple kanata instances with different configurations at the same time.
 - Works out-of-the box with no configuration, but can be configured with toml file.
 
@@ -54,6 +55,12 @@ kanata_config = '' # if empty or not omitted, kanata default config locations wi
 tcp_port = 5829 # (default: 5829)
 autorestart_on_crash = true # (default: false)
 
+[defaults.trackpad_while_typing]
+enabled = true
+keyboard_device = 'auto:kanata'    # or '/dev/input/eventX'
+pointer_device = 'auto:touchpad'   # or exact Hyprland pointer name
+trigger_key = 'KEY_FN'             # KEY_FN | KEY_LEFTALT | KEY_RIGHTALT
+
 [defaults.hooks]
 # Hooks allow running custom commands on specific events (e.g. starting preset).
 # Reference: https://github.com/rszyma/kanata-tray/blob/main/doc/hooks.md
@@ -78,7 +85,7 @@ kanata_config = '~/.config/kanata/test.kbd'
 ### Explanation
 
 `presets` - a config item, that adds an entry to tray menu. Each preset can have different settings for running kanata with:
-`kanata_config`, `kanata_executable`, `autorun`, `layer_icons`, `tcp_port`, `extra_args`, `autorestart_on_crash`.
+`kanata_config`, `kanata_executable`, `autorun`, `layer_icons`, `tcp_port`, `extra_args`, `autorestart_on_crash`, `trackpad_while_typing`.
 
 `preset.autorun` - when set to true, preset will run at kanata-tray startup.
 
@@ -86,6 +93,10 @@ kanata_config = '~/.config/kanata/test.kbd'
 
 `preset.autorestart_on_crash` - when set to true, preset will automatically restart whenever kanata crashes.
 In case of too rapid restarts (above 2 autorestarts / minute) this feature will be automatically disabled.
+
+`preset.trackpad_while_typing` - Linux + Hyprland helper that disables touchpad by default and enables it while a trigger key is held.
+Works with `kanata` virtual keyboard event source (`auto:kanata`) and Hyprland runtime API (`hyprctl keyword device[...]:enabled ...`).
+This replaces the need for external scripts/hooks for this behavior.
 
 `defaults` - a config item, that allows to overwrite default values for all presets.
 It accepts same configuration options that `presets` do.
@@ -118,6 +129,11 @@ and other ignored.
 
 Hooks allow running custom commands on specific events (e.g. starting preset).
 [Hooks documentation](./doc/hooks.md).
+
+### Trackpad while typing (Linux/Hyprland)
+
+Built-in helper (`trackpad_while_typing`) is optional and disabled by default.
+When enabled, it is tied to preset lifecycle (start/stop/crash cleanup) and re-enables pointer on exit for safety.
 
 ### Config completion in editors
 

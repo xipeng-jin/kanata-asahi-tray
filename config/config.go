@@ -27,14 +27,22 @@ type Config struct {
 }
 
 type Preset struct {
-	Autorun            bool
-	KanataExecutable   string
-	KanataConfig       string
-	TcpPort            int
-	LayerIcons         map[string]string
-	Hooks              Hooks
-	ExtraArgs          []string
-	AutorestartOnCrash bool
+	Autorun             bool
+	KanataExecutable    string
+	KanataConfig        string
+	TcpPort             int
+	LayerIcons          map[string]string
+	Hooks               Hooks
+	TrackpadWhileTyping TrackpadWhileTyping
+	ExtraArgs           []string
+	AutorestartOnCrash  bool
+}
+
+type TrackpadWhileTyping struct {
+	Enabled        bool
+	KeyboardDevice string
+	PointerDevice  string
+	TriggerKey     string
 }
 
 func (m *Preset) GoString() string {
@@ -66,14 +74,15 @@ type config struct {
 }
 
 type preset struct {
-	Autorun            *bool             `toml:"autorun"`
-	KanataExecutable   *string           `toml:"kanata_executable"`
-	KanataConfig       *string           `toml:"kanata_config"`
-	TcpPort            *int              `toml:"tcp_port"`
-	LayerIcons         map[string]string `toml:"layer_icons"`
-	Hooks              *hooks            `toml:"hooks"`
-	ExtraArgs          extraArgs         `toml:"extra_args"`
-	AutorestartOnCrash *bool             `toml:"autorestart_on_crash"`
+	Autorun             *bool                `toml:"autorun"`
+	KanataExecutable    *string              `toml:"kanata_executable"`
+	KanataConfig        *string              `toml:"kanata_config"`
+	TcpPort             *int                 `toml:"tcp_port"`
+	LayerIcons          map[string]string    `toml:"layer_icons"`
+	Hooks               *hooks               `toml:"hooks"`
+	TrackpadWhileTyping *trackpadWhileTyping `toml:"trackpad_while_typing"`
+	ExtraArgs           extraArgs            `toml:"extra_args"`
+	AutorestartOnCrash  *bool                `toml:"autorestart_on_crash"`
 }
 
 func (p *preset) applyDefaults(defaults *preset) {
@@ -97,6 +106,11 @@ func (p *preset) applyDefaults(defaults *preset) {
 	if p.Hooks == nil {
 		p.Hooks = defaults.Hooks
 	}
+	if p.TrackpadWhileTyping == nil {
+		p.TrackpadWhileTyping = defaults.TrackpadWhileTyping
+	} else {
+		p.TrackpadWhileTyping.applyDefaults(defaults.TrackpadWhileTyping)
+	}
 	if p.ExtraArgs == nil {
 		p.ExtraArgs = defaults.ExtraArgs
 	}
@@ -106,7 +120,7 @@ func (p *preset) applyDefaults(defaults *preset) {
 }
 
 func (p *preset) intoExported() (*Preset, error) {
-	result := &Preset{}
+	result := &Preset{TrackpadWhileTyping: defaultTrackpadWhileTyping()}
 	if p.Autorun != nil {
 		result.Autorun = *p.Autorun
 	}
@@ -129,6 +143,13 @@ func (p *preset) intoExported() (*Preset, error) {
 		}
 		result.Hooks = *x
 	}
+	if p.TrackpadWhileTyping != nil {
+		x, err := p.TrackpadWhileTyping.intoExported()
+		if err != nil {
+			return nil, err
+		}
+		result.TrackpadWhileTyping = *x
+	}
 	if p.ExtraArgs != nil {
 		x, err := p.ExtraArgs.intoExported()
 		if err != nil {
@@ -146,6 +167,85 @@ type generalConfigOptions struct {
 	AllowConcurrentPresets *bool `toml:"allow_concurrent_presets"`
 	ControlServerEnable    *bool `toml:"control_server_enable"`
 	ControlServerPort      *int  `toml:"control_server_port"`
+}
+
+type trackpadWhileTyping struct {
+	Enabled        *bool   `toml:"enabled"`
+	KeyboardDevice *string `toml:"keyboard_device"`
+	PointerDevice  *string `toml:"pointer_device"`
+	TriggerKey     *string `toml:"trigger_key"`
+}
+
+func defaultTrackpadWhileTyping() TrackpadWhileTyping {
+	return TrackpadWhileTyping{
+		Enabled:        false,
+		KeyboardDevice: "auto:kanata",
+		PointerDevice:  "auto:touchpad",
+		TriggerKey:     "KEY_FN",
+	}
+}
+
+func (t *trackpadWhileTyping) applyDefaults(defaults *trackpadWhileTyping) {
+	if defaults == nil {
+		return
+	}
+	if t.Enabled == nil {
+		t.Enabled = defaults.Enabled
+	}
+	if t.KeyboardDevice == nil {
+		t.KeyboardDevice = defaults.KeyboardDevice
+	}
+	if t.PointerDevice == nil {
+		t.PointerDevice = defaults.PointerDevice
+	}
+	if t.TriggerKey == nil {
+		t.TriggerKey = defaults.TriggerKey
+	}
+}
+
+func (t *trackpadWhileTyping) intoExported() (*TrackpadWhileTyping, error) {
+	result := defaultTrackpadWhileTyping()
+
+	if t.Enabled != nil {
+		result.Enabled = *t.Enabled
+	}
+	if t.KeyboardDevice != nil {
+		v := strings.TrimSpace(*t.KeyboardDevice)
+		if v != "" {
+			result.KeyboardDevice = v
+		}
+	}
+	if t.PointerDevice != nil {
+		v := strings.TrimSpace(*t.PointerDevice)
+		if v != "" {
+			result.PointerDevice = v
+		}
+	}
+	if t.TriggerKey != nil {
+		v := strings.TrimSpace(*t.TriggerKey)
+		if v != "" {
+			result.TriggerKey = strings.ToUpper(v)
+		}
+	}
+
+	if strings.EqualFold(result.KeyboardDevice, "auto:kanata") {
+		result.KeyboardDevice = "auto:kanata"
+	}
+	if strings.EqualFold(result.PointerDevice, "auto:touchpad") {
+		result.PointerDevice = "auto:touchpad"
+	}
+
+	if strings.HasPrefix(strings.ToLower(result.KeyboardDevice), "auto:") && result.KeyboardDevice != "auto:kanata" {
+		return nil, fmt.Errorf("invalid trackpad_while_typing.keyboard_device '%s': allowed auto selector is auto:kanata or a /dev/input/eventX path", result.KeyboardDevice)
+	}
+	if strings.HasPrefix(strings.ToLower(result.PointerDevice), "auto:") && result.PointerDevice != "auto:touchpad" {
+		return nil, fmt.Errorf("invalid trackpad_while_typing.pointer_device '%s': allowed auto selector is auto:touchpad or an exact Hyprland device name", result.PointerDevice)
+	}
+	if result.TriggerKey != "KEY_FN" && result.TriggerKey != "KEY_LEFTALT" && result.TriggerKey != "KEY_RIGHTALT" {
+		return nil, fmt.Errorf("invalid trackpad_while_typing.trigger_key '%s': allowed values are KEY_FN, KEY_LEFTALT, KEY_RIGHTALT", result.TriggerKey)
+	}
+
+	return &result, nil
 }
 
 type hooks struct {

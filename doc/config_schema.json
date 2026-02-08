@@ -69,6 +69,38 @@
                     },
                     "description": "Allows running additional scripts/programs on specific events."
                 },
+                "trackpad_while_typing": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Linux/Hyprland only. Disables touchpad by default and temporarily enables it while trigger_key is held."
+                        },
+                        "keyboard_device": {
+                            "type": "string",
+                            "default": "auto:kanata",
+                            "description": "Keyboard event source. Use auto:kanata to auto-detect kanata virtual keyboard, or set /dev/input/eventX explicitly."
+                        },
+                        "pointer_device": {
+                            "type": "string",
+                            "default": "auto:touchpad",
+                            "description": "Hyprland pointer device name. Use auto:touchpad for auto-detection, or set exact device name from `hyprctl -j devices`."
+                        },
+                        "trigger_key": {
+                            "type": "string",
+                            "default": "KEY_FN",
+                            "enum": [
+                                "KEY_FN",
+                                "KEY_LEFTALT",
+                                "KEY_RIGHTALT"
+                            ],
+                            "description": "Key that temporarily enables the pointer while pressed (value 1/2). Release (value 0) disables pointer again."
+                        }
+                    },
+                    "additionalProperties": false,
+                    "description": "Built-in helper for touchpad-while-typing behavior. Optional and disabled by default."
+                },
                 "extra_args": {
                     "type": "array",
                     "items": {
