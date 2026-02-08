@@ -27,6 +27,9 @@ const (
 	keyCodeLeftAlt  uint16 = 56
 	keyCodeRightAlt uint16 = 100
 	keyCodeFn       uint16 = 0x1d0
+
+	keyboardDeviceReadyTimeout  = 8 * time.Second
+	keyboardDeviceRetryInterval = 100 * time.Millisecond
 )
 
 func startTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping) {
@@ -46,11 +49,6 @@ func runTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping)
 	pointerDeviceName, err := resolvePointerDeviceName(ctx, cfg.PointerDevice)
 	if err != nil {
 		return fmt.Errorf("resolve pointer device: %w", err)
-	}
-
-	keyboardEventPath, err := resolveKeyboardEventPath(cfg.KeyboardDevice)
-	if err != nil {
-		return fmt.Errorf("resolve keyboard device: %w", err)
 	}
 
 	triggerCode, err := triggerKeyCode(cfg.TriggerKey)
@@ -78,9 +76,9 @@ func runTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping)
 		}
 	}()
 
-	keyboardDeviceFile, err := os.Open(keyboardEventPath)
+	keyboardDeviceFile, keyboardEventPath, err := openKeyboardDeviceWithRetry(ctx, cfg.KeyboardDevice)
 	if err != nil {
-		return fmt.Errorf("open keyboard device '%s': %w", keyboardEventPath, err)
+		return err
 	}
 	defer keyboardDeviceFile.Close()
 
@@ -211,6 +209,73 @@ func resolveKeyboardEventPath(rawValue string) (string, error) {
 	}
 
 	return rawValue, nil
+}
+
+func openKeyboardDeviceWithRetry(ctx context.Context, rawValue string) (*os.File, string, error) {
+	deadline := time.Now().Add(keyboardDeviceReadyTimeout)
+	autoSelector := isAutoKanataSelector(rawValue)
+
+	var lastErr error
+	for {
+		keyboardEventPath, err := resolveKeyboardEventPath(rawValue)
+		if err != nil {
+			lastErr = fmt.Errorf("resolve keyboard device: %w", err)
+			if !autoSelector {
+				return nil, "", lastErr
+			}
+		} else {
+			keyboardDeviceFile, openErr := os.Open(keyboardEventPath)
+			if openErr == nil {
+				return keyboardDeviceFile, keyboardEventPath, nil
+			}
+
+			lastErr = fmt.Errorf("open keyboard device '%s': %w", keyboardEventPath, openErr)
+			if !isRetriableKeyboardOpenError(openErr) {
+				return nil, "", lastErr
+			}
+		}
+
+		if !autoSelector && time.Now().After(deadline) {
+			return nil, "", lastErr
+		}
+		if autoSelector && time.Now().After(deadline) {
+			return nil, "", fmt.Errorf("timed out waiting for keyboard device readiness: %w", lastErr)
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, "", ctx.Err()
+		case <-time.After(keyboardDeviceRetryInterval):
+		}
+	}
+}
+
+func isAutoKanataSelector(rawValue string) bool {
+	rawValue = strings.TrimSpace(rawValue)
+	return rawValue == "" || strings.EqualFold(rawValue, "auto:kanata")
+}
+
+func isRetriableKeyboardOpenError(err error) bool {
+	if errors.Is(err, os.ErrPermission) || errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+
+	var pathErr *os.PathError
+	if !errors.As(err, &pathErr) {
+		return false
+	}
+
+	errno, ok := pathErr.Err.(syscall.Errno)
+	if !ok {
+		return false
+	}
+
+	switch errno {
+	case syscall.EACCES, syscall.EPERM, syscall.ENOENT, syscall.ENODEV, syscall.ENXIO, syscall.EBUSY:
+		return true
+	default:
+		return false
+	}
 }
 
 func autoDetectKanataEventDevice() (string, error) {
