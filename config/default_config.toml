@@ -13,6 +13,7 @@ autorestart_on_crash = false
 [defaults.trackpad_while_typing]
 # Enable built-in Linux/Hyprland touchpad toggling while a key is held.
 # When enabled, touchpad is disabled by default and enabled only while trigger_key is held.
+# Press KEY_FN+KEY_LEFTALT or KEY_FN+KEY_RIGHTALT to toggle permanent enable on/off.
 # enabled = false
 # keyboard_device = "auto:kanata"   # or /dev/input/eventX
 # pointer_device = "auto:touchpad"  # or exact Hyprland pointer name

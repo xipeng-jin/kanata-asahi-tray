@@ -22,7 +22,12 @@ import (
 	"github.com/rszyma/kanata-tray/config"
 )
 
-const evKey uint16 = 0x01
+const (
+	evKey           uint16 = 0x01
+	keyCodeLeftAlt  uint16 = 56
+	keyCodeRightAlt uint16 = 100
+	keyCodeFn       uint16 = 0x1d0
+)
 
 func startTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping) {
 	if !cfg.Enabled {
@@ -57,6 +62,13 @@ func runTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping)
 		return fmt.Errorf("disable pointer '%s': %w", pointerDeviceName, err)
 	}
 	pointerEnabled := false
+	permanentEnabled := false
+	comboPressed := false
+	triggerPressed := false
+	suppressTemporaryUntilTriggerRelease := false
+	fnPressed := false
+	leftAltPressed := false
+	rightAltPressed := false
 
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -78,7 +90,7 @@ func runTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping)
 	}()
 
 	log.Infof(
-		"trackpad_while_typing enabled (keyboard=%s pointer=%s trigger=%s)",
+		"trackpad_while_typing enabled (keyboard=%s pointer=%s trigger=%s toggle_combo=KEY_FN+KEY_LEFTALT|KEY_RIGHTALT)",
 		keyboardEventPath,
 		pointerDeviceName,
 		cfg.TriggerKey,
@@ -94,18 +106,43 @@ func runTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping)
 			return fmt.Errorf("read keyboard events: %w", err)
 		}
 
-		if event.Type != evKey || event.Code != triggerCode {
+		if event.Type != evKey || !isTrackpadControlKey(event.Code, triggerCode) {
 			continue
 		}
 
-		var shouldEnablePointer bool
-		switch event.Value {
-		case 0:
-			shouldEnablePointer = false
-		case 1, 2:
-			shouldEnablePointer = true
-		default:
+		pressed, isStateEvent := keyValueToPressedState(event.Value)
+		if !isStateEvent {
 			continue
+		}
+
+		switch event.Code {
+		case keyCodeFn:
+			fnPressed = pressed
+		case keyCodeLeftAlt:
+			leftAltPressed = pressed
+		case keyCodeRightAlt:
+			rightAltPressed = pressed
+		}
+		if event.Code == triggerCode {
+			triggerPressed = pressed
+		}
+
+		comboNow := fnPressed && (leftAltPressed || rightAltPressed)
+		if comboNow && !comboPressed {
+			permanentEnabled = !permanentEnabled
+			if !permanentEnabled {
+				suppressTemporaryUntilTriggerRelease = triggerPressed
+			}
+			log.Infof("trackpad_while_typing permanent toggle changed: enabled=%t", permanentEnabled)
+		}
+		comboPressed = comboNow
+		if !triggerPressed {
+			suppressTemporaryUntilTriggerRelease = false
+		}
+
+		shouldEnablePointer := permanentEnabled
+		if !shouldEnablePointer {
+			shouldEnablePointer = triggerPressed && !comboPressed && !suppressTemporaryUntilTriggerRelease
 		}
 
 		if shouldEnablePointer == pointerEnabled {
@@ -206,13 +243,28 @@ func autoDetectKanataEventDevice() (string, error) {
 func triggerKeyCode(triggerKey string) (uint16, error) {
 	switch strings.ToUpper(strings.TrimSpace(triggerKey)) {
 	case "", "KEY_FN":
-		return 0x1d0, nil
+		return keyCodeFn, nil
 	case "KEY_LEFTALT":
-		return 56, nil
+		return keyCodeLeftAlt, nil
 	case "KEY_RIGHTALT":
-		return 100, nil
+		return keyCodeRightAlt, nil
 	default:
 		return 0, fmt.Errorf("unsupported trigger key '%s'", triggerKey)
+	}
+}
+
+func isTrackpadControlKey(code uint16, triggerCode uint16) bool {
+	return code == triggerCode || code == keyCodeFn || code == keyCodeLeftAlt || code == keyCodeRightAlt
+}
+
+func keyValueToPressedState(value int32) (bool, bool) {
+	switch value {
+	case 0:
+		return false, true
+	case 1, 2:
+		return true, true
+	default:
+		return false, false
 	}
 }
 
