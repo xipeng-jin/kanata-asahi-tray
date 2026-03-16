@@ -75,7 +75,7 @@
                         "enabled": {
                             "type": "boolean",
                             "default": false,
-                            "description": "Linux/Hyprland only. Disables touchpad by default and temporarily enables it while trigger_key is held. KEY_FN+KEY_LEFTALT or KEY_FN+KEY_RIGHTALT toggles permanent enable on/off."
+                            "description": "Linux/Hyprland only. Temporarily enables the touchpad while Alt is held, and uses Alt+Meta to toggle permanent enable on/off."
                         },
                         "keyboard_device": {
                             "type": "string",
@@ -89,13 +89,13 @@
                         },
                         "trigger_key": {
                             "type": "string",
-                            "default": "KEY_FN",
+                            "default": "KEY_ALT",
                             "enum": [
-                                "KEY_FN",
+                                "KEY_ALT",
                                 "KEY_LEFTALT",
                                 "KEY_RIGHTALT"
                             ],
-                            "description": "Key that temporarily enables the pointer while pressed (value 1/2). Release (value 0) disables pointer again. Permanent toggle uses KEY_FN+KEY_LEFTALT or KEY_FN+KEY_RIGHTALT."
+                            "description": "Temporary trigger key. KEY_ALT is the default and preferred value; KEY_LEFTALT and KEY_RIGHTALT are accepted as aliases."
                         }
                     },
                     "additionalProperties": false,
