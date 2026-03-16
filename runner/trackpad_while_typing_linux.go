@@ -23,14 +23,27 @@ import (
 )
 
 const (
-	evKey           uint16 = 0x01
-	keyCodeLeftAlt  uint16 = 56
-	keyCodeRightAlt uint16 = 100
-	keyCodeFn       uint16 = 0x1d0
+	evKey            uint16 = 0x01
+	keyCodeLeftAlt   uint16 = 56
+	keyCodeRightAlt  uint16 = 100
+	keyCodeLeftMeta  uint16 = 125
+	keyCodeRightMeta uint16 = 126
 
 	keyboardDeviceReadyTimeout  = 8 * time.Second
 	keyboardDeviceRetryInterval = 100 * time.Millisecond
 )
+
+type trackpadControlState struct {
+	pointerEnabled                       bool
+	permanentEnabled                     bool
+	comboPressed                         bool
+	triggerPressed                       bool
+	suppressTemporaryUntilTriggerRelease bool
+	leftAltPressed                       bool
+	rightAltPressed                      bool
+	leftMetaPressed                      bool
+	rightMetaPressed                     bool
+}
 
 func startTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping) {
 	if !cfg.Enabled {
@@ -51,22 +64,10 @@ func runTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping)
 		return fmt.Errorf("resolve pointer device: %w", err)
 	}
 
-	triggerCode, err := triggerKeyCode(cfg.TriggerKey)
-	if err != nil {
-		return fmt.Errorf("parse trigger key: %w", err)
-	}
-
 	if err := setHyprPointerEnabled(ctx, pointerDeviceName, false); err != nil {
 		return fmt.Errorf("disable pointer '%s': %w", pointerDeviceName, err)
 	}
-	pointerEnabled := false
-	permanentEnabled := false
-	comboPressed := false
-	triggerPressed := false
-	suppressTemporaryUntilTriggerRelease := false
-	fnPressed := false
-	leftAltPressed := false
-	rightAltPressed := false
+	state := newTrackpadControlState()
 
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -88,10 +89,9 @@ func runTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping)
 	}()
 
 	log.Infof(
-		"trackpad_while_typing enabled (keyboard=%s pointer=%s trigger=%s toggle_combo=KEY_FN+KEY_LEFTALT|KEY_RIGHTALT)",
+		"trackpad_while_typing enabled (keyboard=%s pointer=%s trigger=KEY_ALT toggle_combo=KEY_ALT+KEY_META)",
 		keyboardEventPath,
 		pointerDeviceName,
-		cfg.TriggerKey,
 	)
 
 	for {
@@ -104,7 +104,7 @@ func runTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping)
 			return fmt.Errorf("read keyboard events: %w", err)
 		}
 
-		if event.Type != evKey || !isTrackpadControlKey(event.Code, triggerCode) {
+		if event.Type != evKey || !isTrackpadControlKey(event.Code) {
 			continue
 		}
 
@@ -113,49 +113,21 @@ func runTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping)
 			continue
 		}
 
-		switch event.Code {
-		case keyCodeFn:
-			fnPressed = pressed
-		case keyCodeLeftAlt:
-			leftAltPressed = pressed
-		case keyCodeRightAlt:
-			rightAltPressed = pressed
+		pointerChanged, permanentChanged := state.applyKeyEvent(event.Code, pressed)
+		if permanentChanged {
+			log.Infof("trackpad_while_typing permanent toggle changed: enabled=%t", state.permanentEnabled)
 		}
-		if event.Code == triggerCode {
-			triggerPressed = pressed
-		}
-
-		comboNow := fnPressed && (leftAltPressed || rightAltPressed)
-		if comboNow && !comboPressed {
-			permanentEnabled = !permanentEnabled
-			if !permanentEnabled {
-				suppressTemporaryUntilTriggerRelease = triggerPressed
-			}
-			log.Infof("trackpad_while_typing permanent toggle changed: enabled=%t", permanentEnabled)
-		}
-		comboPressed = comboNow
-		if !triggerPressed {
-			suppressTemporaryUntilTriggerRelease = false
-		}
-
-		shouldEnablePointer := permanentEnabled
-		if !shouldEnablePointer {
-			shouldEnablePointer = triggerPressed && !comboPressed && !suppressTemporaryUntilTriggerRelease
-		}
-
-		if shouldEnablePointer == pointerEnabled {
+		if !pointerChanged {
 			continue
 		}
 
-		err = setHyprPointerEnabled(ctx, pointerDeviceName, shouldEnablePointer)
+		err = setHyprPointerEnabled(ctx, pointerDeviceName, state.pointerEnabled)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
-			return fmt.Errorf("toggle pointer enabled=%t: %w", shouldEnablePointer, err)
+			return fmt.Errorf("toggle pointer enabled=%t: %w", state.pointerEnabled, err)
 		}
-
-		pointerEnabled = shouldEnablePointer
 	}
 }
 
@@ -305,21 +277,11 @@ func autoDetectKanataEventDevice() (string, error) {
 	return "", fmt.Errorf("auto:kanata keyboard device not found")
 }
 
-func triggerKeyCode(triggerKey string) (uint16, error) {
-	switch strings.ToUpper(strings.TrimSpace(triggerKey)) {
-	case "", "KEY_FN":
-		return keyCodeFn, nil
-	case "KEY_LEFTALT":
-		return keyCodeLeftAlt, nil
-	case "KEY_RIGHTALT":
-		return keyCodeRightAlt, nil
-	default:
-		return 0, fmt.Errorf("unsupported trigger key '%s'", triggerKey)
-	}
-}
-
-func isTrackpadControlKey(code uint16, triggerCode uint16) bool {
-	return code == triggerCode || code == keyCodeFn || code == keyCodeLeftAlt || code == keyCodeRightAlt
+func isTrackpadControlKey(code uint16) bool {
+	return code == keyCodeLeftAlt ||
+		code == keyCodeRightAlt ||
+		code == keyCodeLeftMeta ||
+		code == keyCodeRightMeta
 }
 
 func keyValueToPressedState(value int32) (bool, bool) {
@@ -331,6 +293,46 @@ func keyValueToPressedState(value int32) (bool, bool) {
 	default:
 		return false, false
 	}
+}
+
+func newTrackpadControlState() trackpadControlState {
+	return trackpadControlState{pointerEnabled: false}
+}
+
+func (s *trackpadControlState) applyKeyEvent(code uint16, pressed bool) (bool, bool) {
+	previousPointerEnabled := s.pointerEnabled
+	previousPermanentEnabled := s.permanentEnabled
+
+	switch code {
+	case keyCodeLeftAlt:
+		s.leftAltPressed = pressed
+	case keyCodeRightAlt:
+		s.rightAltPressed = pressed
+	case keyCodeLeftMeta:
+		s.leftMetaPressed = pressed
+	case keyCodeRightMeta:
+		s.rightMetaPressed = pressed
+	}
+	s.triggerPressed = s.leftAltPressed || s.rightAltPressed
+
+	comboNow := s.triggerPressed && (s.leftMetaPressed || s.rightMetaPressed)
+	if comboNow && !s.comboPressed {
+		s.permanentEnabled = !s.permanentEnabled
+		if !s.permanentEnabled {
+			s.suppressTemporaryUntilTriggerRelease = s.triggerPressed
+		}
+	}
+	s.comboPressed = comboNow
+	if !s.triggerPressed {
+		s.suppressTemporaryUntilTriggerRelease = false
+	}
+
+	s.pointerEnabled = s.permanentEnabled
+	if !s.pointerEnabled {
+		s.pointerEnabled = s.triggerPressed && !s.comboPressed && !s.suppressTemporaryUntilTriggerRelease
+	}
+
+	return s.pointerEnabled != previousPointerEnabled, s.permanentEnabled != previousPermanentEnabled
 }
 
 func setHyprPointerEnabled(ctx context.Context, pointerDeviceName string, enabled bool) error {
