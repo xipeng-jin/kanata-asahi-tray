@@ -59,9 +59,9 @@ autorestart_on_crash = true # (default: false)
 enabled = true
 keyboard_device = 'auto:kanata'    # or '/dev/input/eventX'
 pointer_device = 'auto:touchpad'   # or exact Hyprland pointer name
-trigger_key = 'KEY_ALT'            # KEY_ALT
-# Hold KEY_ALT for temporary enable.
-# Press KEY_ALT+KEY_META to toggle permanent enable on/off.
+trigger_key = 'KEY_ESC'            # KEY_ESC | KEY_ESCAPE
+# Touchpad stays enabled unless Omarchy's touchpad-disabled toggle is active.
+# While disabled by Omarchy, hold KEY_ESC for temporary enable.
 
 [defaults.hooks]
 # Hooks allow running custom commands on specific events (e.g. starting preset).
@@ -96,9 +96,8 @@ kanata_config = '~/.config/kanata/test.kbd'
 `preset.autorestart_on_crash` - when set to true, preset will automatically restart whenever kanata crashes.
 In case of too rapid restarts (above 2 autorestarts / minute) this feature will be automatically disabled.
 
-`preset.trackpad_while_typing` - Linux + Hyprland helper that disables touchpad by default and temporarily enables it while `KEY_ALT` is held.
-Press `KEY_ALT+KEY_META` to toggle permanent enable on/off.
-While permanently enabled, pressing `KEY_ALT` alone does nothing.
+`preset.trackpad_while_typing` - Linux + Hyprland helper for Omarchy systems.
+Touchpad stays enabled by default. When Omarchy's touchpad-disabled toggle is active, holding `KEY_ESC` temporarily enables the touchpad until release.
 Works with `kanata` virtual keyboard event source (`auto:kanata`) and Hyprland runtime API (`hyprctl keyword device[...]:enabled ...`).
 This replaces the need for external scripts/hooks for this behavior.
 
@@ -137,8 +136,8 @@ Hooks allow running custom commands on specific events (e.g. starting preset).
 ### Trackpad while typing (Linux/Hyprland)
 
 Built-in helper (`trackpad_while_typing`) is optional and disabled by default.
-When enabled, it is tied to preset lifecycle (start/stop/crash cleanup) and re-enables pointer on exit for safety.
-Temporary behavior uses `KEY_ALT`, and permanent toggle is available via `KEY_ALT+KEY_META`.
+When enabled, it is tied to preset lifecycle (start/stop/crash cleanup) and respects Omarchy's touchpad toggle state.
+Temporary behavior uses `KEY_ESC` only while Omarchy's `touchpad-disabled.conf` flag exists.
 
 ### Config completion in editors
 

@@ -181,7 +181,7 @@ func defaultTrackpadWhileTyping() TrackpadWhileTyping {
 		Enabled:        false,
 		KeyboardDevice: "auto:kanata",
 		PointerDevice:  "auto:touchpad",
-		TriggerKey:     "KEY_ALT",
+		TriggerKey:     "KEY_ESC",
 	}
 }
 
@@ -242,11 +242,11 @@ func (t *trackpadWhileTyping) intoExported() (*TrackpadWhileTyping, error) {
 		return nil, fmt.Errorf("invalid trackpad_while_typing.pointer_device '%s': allowed auto selector is auto:touchpad or an exact Hyprland device name", result.PointerDevice)
 	}
 	switch result.TriggerKey {
-	case "KEY_LEFTALT", "KEY_RIGHTALT":
-		result.TriggerKey = "KEY_ALT"
-	case "KEY_ALT":
+	case "KEY_ESCAPE":
+		result.TriggerKey = "KEY_ESC"
+	case "KEY_ESC":
 	default:
-		return nil, fmt.Errorf("invalid trackpad_while_typing.trigger_key '%s': allowed values are KEY_ALT, KEY_LEFTALT, KEY_RIGHTALT", result.TriggerKey)
+		return nil, fmt.Errorf("invalid trackpad_while_typing.trigger_key '%s': allowed values are KEY_ESC, KEY_ESCAPE", result.TriggerKey)
 	}
 
 	return &result, nil

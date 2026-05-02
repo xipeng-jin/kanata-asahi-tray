@@ -75,7 +75,7 @@
                         "enabled": {
                             "type": "boolean",
                             "default": false,
-                            "description": "Linux/Hyprland only. Temporarily enables the touchpad while Alt is held, and uses Alt+Meta to toggle permanent enable on/off."
+                            "description": "Linux/Hyprland Omarchy helper. Touchpad remains enabled by default; when Omarchy's touchpad-disabled toggle is active, holding the trigger key temporarily enables it."
                         },
                         "keyboard_device": {
                             "type": "string",
@@ -89,13 +89,12 @@
                         },
                         "trigger_key": {
                             "type": "string",
-                            "default": "KEY_ALT",
+                            "default": "KEY_ESC",
                             "enum": [
-                                "KEY_ALT",
-                                "KEY_LEFTALT",
-                                "KEY_RIGHTALT"
+                                "KEY_ESC",
+                                "KEY_ESCAPE"
                             ],
-                            "description": "Temporary trigger key. KEY_ALT is the default and preferred value; KEY_LEFTALT and KEY_RIGHTALT are accepted as aliases."
+                            "description": "Temporary trigger key. KEY_ESC is the default and preferred value; KEY_ESCAPE is accepted as an alias."
                         }
                     },
                     "additionalProperties": false,

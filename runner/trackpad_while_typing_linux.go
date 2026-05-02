@@ -23,26 +23,19 @@ import (
 )
 
 const (
-	evKey            uint16 = 0x01
-	keyCodeLeftAlt   uint16 = 56
-	keyCodeRightAlt  uint16 = 100
-	keyCodeLeftMeta  uint16 = 125
-	keyCodeRightMeta uint16 = 126
+	evKey           uint16 = 0x01
+	keyCodeEsc      uint16 = 1
+	keyCodeLeftAlt  uint16 = 56
+	keyCodeRightAlt uint16 = 100
 
 	keyboardDeviceReadyTimeout  = 8 * time.Second
 	keyboardDeviceRetryInterval = 100 * time.Millisecond
 )
 
 type trackpadControlState struct {
-	pointerEnabled                       bool
-	permanentEnabled                     bool
-	comboPressed                         bool
-	triggerPressed                       bool
-	suppressTemporaryUntilTriggerRelease bool
-	leftAltPressed                       bool
-	rightAltPressed                      bool
-	leftMetaPressed                      bool
-	rightMetaPressed                     bool
+	pointerEnabled   bool
+	temporaryEnabled bool
+	triggerPressed   bool
 }
 
 func startTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping) {
@@ -64,16 +57,22 @@ func runTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping)
 		return fmt.Errorf("resolve pointer device: %w", err)
 	}
 
-	if err := setHyprPointerEnabled(ctx, pointerDeviceName, false); err != nil {
-		return fmt.Errorf("disable pointer '%s': %w", pointerDeviceName, err)
+	triggerCode, err := triggerKeyCode(cfg.TriggerKey)
+	if err != nil {
+		return fmt.Errorf("parse trigger key: %w", err)
 	}
-	state := newTrackpadControlState()
+
+	state := newTrackpadControlState(isOmarchyTouchpadDisabled())
+	if err := setHyprPointerEnabled(ctx, pointerDeviceName, state.pointerEnabled); err != nil {
+		return fmt.Errorf("set initial pointer '%s' enabled=%t: %w", pointerDeviceName, state.pointerEnabled, err)
+	}
 
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		if err := setHyprPointerEnabled(cleanupCtx, pointerDeviceName, true); err != nil {
-			log.Warnf("trackpad_while_typing cleanup failed to re-enable pointer '%s': %v", pointerDeviceName, err)
+		cleanupEnabled := !isOmarchyTouchpadDisabled()
+		if err := setHyprPointerEnabled(cleanupCtx, pointerDeviceName, cleanupEnabled); err != nil {
+			log.Warnf("trackpad_while_typing cleanup failed to restore pointer '%s' enabled=%t: %v", pointerDeviceName, cleanupEnabled, err)
 		}
 	}()
 
@@ -89,9 +88,11 @@ func runTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping)
 	}()
 
 	log.Infof(
-		"trackpad_while_typing enabled (keyboard=%s pointer=%s trigger=KEY_ALT toggle_combo=KEY_ALT+KEY_META)",
+		"trackpad_while_typing enabled (keyboard=%s pointer=%s trigger=%s omarchy_disabled_flag=%s)",
 		keyboardEventPath,
 		pointerDeviceName,
+		cfg.TriggerKey,
+		omarchyTouchpadDisabledPath(),
 	)
 
 	for {
@@ -104,7 +105,7 @@ func runTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping)
 			return fmt.Errorf("read keyboard events: %w", err)
 		}
 
-		if event.Type != evKey || !isTrackpadControlKey(event.Code) {
+		if event.Type != evKey || !isTrackpadControlKey(event.Code, triggerCode) {
 			continue
 		}
 
@@ -113,10 +114,7 @@ func runTrackpadWhileTyping(ctx context.Context, cfg config.TrackpadWhileTyping)
 			continue
 		}
 
-		pointerChanged, permanentChanged := state.applyKeyEvent(event.Code, pressed)
-		if permanentChanged {
-			log.Infof("trackpad_while_typing permanent toggle changed: enabled=%t", state.permanentEnabled)
-		}
+		pointerChanged := state.applyKeyEvent(event.Code, pressed, isOmarchyTouchpadDisabled())
 		if !pointerChanged {
 			continue
 		}
@@ -277,11 +275,17 @@ func autoDetectKanataEventDevice() (string, error) {
 	return "", fmt.Errorf("auto:kanata keyboard device not found")
 }
 
-func isTrackpadControlKey(code uint16) bool {
-	return code == keyCodeLeftAlt ||
-		code == keyCodeRightAlt ||
-		code == keyCodeLeftMeta ||
-		code == keyCodeRightMeta
+func triggerKeyCode(triggerKey string) (uint16, error) {
+	switch strings.ToUpper(strings.TrimSpace(triggerKey)) {
+	case "", "KEY_ESC", "KEY_ESCAPE":
+		return keyCodeEsc, nil
+	default:
+		return 0, fmt.Errorf("unsupported trigger key '%s'", triggerKey)
+	}
+}
+
+func isTrackpadControlKey(code uint16, triggerCode uint16) bool {
+	return code == triggerCode
 }
 
 func keyValueToPressedState(value int32) (bool, bool) {
@@ -295,44 +299,46 @@ func keyValueToPressedState(value int32) (bool, bool) {
 	}
 }
 
-func newTrackpadControlState() trackpadControlState {
-	return trackpadControlState{pointerEnabled: false}
+func newTrackpadControlState(omarchyDisabled bool) trackpadControlState {
+	return trackpadControlState{
+		pointerEnabled: !omarchyDisabled,
+	}
 }
 
-func (s *trackpadControlState) applyKeyEvent(code uint16, pressed bool) (bool, bool) {
+func (s *trackpadControlState) applyKeyEvent(code uint16, pressed bool, omarchyDisabled bool) bool {
 	previousPointerEnabled := s.pointerEnabled
-	previousPermanentEnabled := s.permanentEnabled
 
-	switch code {
-	case keyCodeLeftAlt:
-		s.leftAltPressed = pressed
-	case keyCodeRightAlt:
-		s.rightAltPressed = pressed
-	case keyCodeLeftMeta:
-		s.leftMetaPressed = pressed
-	case keyCodeRightMeta:
-		s.rightMetaPressed = pressed
-	}
-	s.triggerPressed = s.leftAltPressed || s.rightAltPressed
-
-	comboNow := s.triggerPressed && (s.leftMetaPressed || s.rightMetaPressed)
-	if comboNow && !s.comboPressed {
-		s.permanentEnabled = !s.permanentEnabled
-		if !s.permanentEnabled {
-			s.suppressTemporaryUntilTriggerRelease = s.triggerPressed
-		}
-	}
-	s.comboPressed = comboNow
-	if !s.triggerPressed {
-		s.suppressTemporaryUntilTriggerRelease = false
+	if code == keyCodeEsc {
+		s.triggerPressed = pressed
 	}
 
-	s.pointerEnabled = s.permanentEnabled
-	if !s.pointerEnabled {
-		s.pointerEnabled = s.triggerPressed && !s.comboPressed && !s.suppressTemporaryUntilTriggerRelease
+	if !omarchyDisabled {
+		s.temporaryEnabled = false
+		s.pointerEnabled = true
+		return s.pointerEnabled != previousPointerEnabled
 	}
 
-	return s.pointerEnabled != previousPointerEnabled, s.permanentEnabled != previousPermanentEnabled
+	s.temporaryEnabled = s.triggerPressed
+	s.pointerEnabled = s.temporaryEnabled
+
+	return s.pointerEnabled != previousPointerEnabled
+}
+
+func omarchyTouchpadDisabledPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".local", "state", "omarchy", "toggles", "hypr", "touchpad-disabled.conf")
+}
+
+func isOmarchyTouchpadDisabled() bool {
+	path := omarchyTouchpadDisabledPath()
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func setHyprPointerEnabled(ctx context.Context, pointerDeviceName string, enabled bool) error {
